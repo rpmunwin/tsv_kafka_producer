@@ -22,9 +22,7 @@ import org.codehaus.jackson.JsonGenerator;
  *
  * This class takes a path to a tab separated value (TSV) file
  * that contains information about messages that should be fed
- * into the sorter, and a batch size that indicates how many
- * individual messages to batch together into a single activeMQ
- * message payload.
+ * into the sorter
  *
  * The TSV file must be in a specified format:
  *
@@ -81,7 +79,6 @@ public class InputTsvFile {
   private final Hashtable<String, DataField> fieldNames = new Hashtable<String, DataField>();
   private final Hashtable<Integer, DataField> columns = new Hashtable<Integer, DataField>();
   private final List<String> messages = new ArrayList<String>();
-  private final List<String> batchMessages = new ArrayList<String>();
 
   @SuppressWarnings("serial")
   private static final Set<String> FIELD_TYPES = new HashSet<String>() {{
@@ -115,7 +112,7 @@ public class InputTsvFile {
    * Builds the InputTsvFile object, reads in the input file, generates
    * all of the messages and stores them for later publishing
    */
-  public InputTsvFile(final String datafilePath, final int batchSize)
+  public InputTsvFile(final String datafilePath)
       throws Exception {
 
     File dataFile = new File(datafilePath);
@@ -130,61 +127,27 @@ public class InputTsvFile {
     System.out.println("Reading data from: " + datafilePath);
     String row = tsv.readLine();
     int rowNumber = 1;
-    int batchMessageCount = 1;
     while (row != null) {
       parseRow(row, rowNumber);
-      if (batchMessageCount < batchSize) {
-        messages.add(createJsonMessage(rowNumber));
-      } else {
-        messages.add(createJsonMessage(rowNumber));
-        batchMessage();
-        batchMessageCount = 0;
-      }
+      messages.add(createJsonMessage(rowNumber));
       row = tsv.readLine();
       rowNumber++;
-      batchMessageCount++;
     }
-    batchMessage();
     tsv.close();
     System.out.println("Read " + rowNumber + " rows from file: " + datafilePath);
   }
 
   /**
-   * Returns a list of message payloads in JSON format to be
-   * published via activeMQ
+   * Returns a the next message in JSON format to be
+   * published via Kafka. Returns null if no more messages
    *
-   * @return List of activeMQ message payloads in JSON format
+   * @return String JSON message payload
    */
-  public List<String> getMessages() {
-    return batchMessages;
-  }
-
-
-  /**
-   * Takes all the messages queued in the messages list and
-   * builds a single JSON-encoded message payload and stores
-   * it in the batchMessages list.
-   *
-   * @throws Exception
-   */
-  private void batchMessage() throws Exception {
-    if (!(messages.isEmpty())) {
-      JsonFactory jsonFactory = new JsonFactory();
-      StringWriter writer = new StringWriter();
-      JsonGenerator jsonGenerator = jsonFactory.createJsonGenerator(writer);
-      jsonGenerator.writeStartObject();
-      jsonGenerator.writeStringField("process", "auth_demo");
-      jsonGenerator.writeArrayFieldStart("data");
-      for (String msg : messages) {
-        jsonGenerator.writeRawValue(msg);
-      }
-      jsonGenerator.writeEndArray();
-      jsonGenerator.writeEndObject();
-      jsonGenerator.flush();
-      jsonGenerator.close();
-
-      batchMessages.add(writer.toString());
-      messages.clear();
+  public String getNextMessage() {
+    if (messages.size() > 0) {
+      return messages.remove(0);
+    } else {
+      return null;
     }
   }
 

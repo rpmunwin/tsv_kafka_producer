@@ -23,18 +23,10 @@ import org.apache.commons.configuration.PropertiesConfiguration;
 public class KafkaProducer {
 
   /**
-   * The default maximum number of messages to combine into
-   * a single message payload. (used when loading
-   * multiple messages from a tsv file)
-   */
-  private static final int DEFAULT_BATCH_SIZE = 1;
-
-  /**
    * The default number of milliseconds to sleep between submitting
-   * batched messages into the sorter. (Used when loading
-   * multiple messages from a tsv file)
+   * messages into the queue.
    */
-  private static final int DEFAULT_BATCH_SLEEP = 10;
+  private static final int DEFAULT_MESSAGE_SLEEP = 10;
 
   /**
    * Path to the default configuration file for the program
@@ -102,20 +94,21 @@ public class KafkaProducer {
    * Publish the contents of the messages at datafilePath to the kafka queue
    * @param datefilePath string path to a tsv file with the content to send
    *                     to the queue.
-   * @param batchSize the maximum number of messages to include in the
-   *                  payload of each message
    * @throws Exception
    */
   public void publishMessageFromTSVFile(final String datafilePath,
-      final int batchSize, final int batchSleep) throws Exception {
-    InputTsvFile inputFile = new InputTsvFile(datafilePath, batchSize);
-    List<String> messages = inputFile.getMessages();
+      final int msgSleep) throws Exception {
+    InputTsvFile inputFile = new InputTsvFile(datafilePath);
+    String message = inputFile.getNextMessage();
 
-    for (String message : messages) {
+    int msgCount = 0;
+    while (message != null) {
+      msgCount++;
       publishKafkaMessage(message);
-      Thread.sleep(batchSleep);
+      Thread.sleep(msgSleep);
+      message = inputFile.getNextMessage();
     }
-    System.out.println("Published " + messages.size() + " batched messages.");
+    System.out.println("Published " + msgCount + " messages.");
   }
 
   /**
@@ -159,20 +152,12 @@ public class KafkaProducer {
     OptionBuilder.isRequired();
     options.addOption(OptionBuilder.create('d'));
 
-    OptionBuilder.withLongOpt("batchsize");
-    OptionBuilder.withDescription("maximum number of lines read from a"
-        + " given data file to put in a single message. The default is: " + DEFAULT_BATCH_SIZE + ".\n"
-        + " Must be combined with the -d|datafile option");
-    OptionBuilder.hasArg();
-    OptionBuilder.withArgName("BATCHSIZE");
-    options.addOption(OptionBuilder.create('b'));
 
-    OptionBuilder.withLongOpt("batchsleep");
+    OptionBuilder.withLongOpt("msgSleep");
     OptionBuilder.withDescription("number of milliseconds to delay between"
-        + " submitting batched messages to the queue. The default is: " + DEFAULT_BATCH_SLEEP + ".\n"
-        + " Must be combined with the -d|datafile option");
+        + " submitting messages to the queue. The default is: " + DEFAULT_MESSAGE_SLEEP + ".\n");
     OptionBuilder.hasArg();
-    OptionBuilder.withArgName("BATCHSLEEP");
+    OptionBuilder.withArgName("MSGSLEEP");
     options.addOption(OptionBuilder.create('s'));
 
     CommandLineParser parser = new PosixParser();
@@ -201,36 +186,23 @@ public class KafkaProducer {
 
     if ((cli != null) && cli.hasOption('d')) {
       String datafilePath = cli.getOptionValue('d');
-      String batchSizeOveride = cli.getOptionValue('b');
-      int batchSize = DEFAULT_BATCH_SIZE;
-      if (batchSizeOveride != null) {
+      String msgSleepOveride = cli.getOptionValue('s');
+      int msgSleep = DEFAULT_MESSAGE_SLEEP;
+      if (msgSleepOveride != null) {
         try {
-          batchSize = Integer.parseInt(batchSizeOveride);
-        } catch (NumberFormatException nfe) {
-          System.out.print("Message limit given with '-b' parameter is not a "
-              + "valid number. Using default size: " + DEFAULT_BATCH_SIZE);
-          batchSize = DEFAULT_BATCH_SIZE;
-        }
-      }
-
-      String batchSleepOveride = cli.getOptionValue('s');
-      int batchSleep = DEFAULT_BATCH_SLEEP;
-      if (batchSleepOveride != null) {
-        try {
-          batchSleep = Integer.parseInt(batchSleepOveride);
+          msgSleep = Integer.parseInt(msgSleepOveride);
         } catch (NumberFormatException nfe) {
           System.out.print(
-              "Batch sleep duration given with '-s' parameter is not a valid " +
-              "number. Using default delay: " + DEFAULT_BATCH_SLEEP + " milliseconds"
+              "Sleep duration given with '-s' parameter is not a valid " +
+              "number. Using default delay: " + DEFAULT_MESSAGE_SLEEP + " milliseconds"
           );
-          batchSleep = DEFAULT_BATCH_SLEEP;
+          msgSleep = DEFAULT_MESSAGE_SLEEP;
         }
       }
       System.out.print("Publishing message contents from:" + datafilePath);
       kafkaProducer.publishMessageFromTSVFile(
           datafilePath,
-          batchSize,
-          batchSleep
+          msgSleep
       );
       System.out.println("done.");
     } 
